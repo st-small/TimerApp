@@ -1,29 +1,31 @@
 import React, { Component } from 'react'
-import { StyleSheet, Text, View, ScrollView } from 'react-native'
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native'
 import moment from 'moment'
 
-const DATA = {
-  timer: 1234567,
-  laps: [12345, 2345, 34567, 98765],
-}
-
 function Timer({ interval, style }) {
+  const pad  = (n) => n < 10 ? '0' + n : n
   const duration = moment.duration(interval)
   const centiseconds = Math.floor(duration.milliseconds() / 10)
   return (
-    <Text style={style}>
-      {duration.minutes()}:{duration.seconds()},{centiseconds}
-    </Text>
+    <View style={styles.timerContainer}>
+      <Text style={style}>{pad(duration.minutes())}:</Text>
+      <Text style={style}>{pad(duration.seconds())},</Text>
+      <Text style={style}>{pad(centiseconds)}</Text>
+    </View>
   )
 }
 
-function RoundButton({ title, color, background }) {
+function RoundButton({ title, color, background, onPress, disabled }) {
   return (
-    <View style={[ styles.button, { backgroundColor: background }]}>
+    <TouchableOpacity
+      onPress={() => !disabled && onPress()}
+      style={[ styles.button, { backgroundColor: background }]}
+      activeOpacity={disabled ? 1.0 : 0.7}
+    >
       <View style={styles.buttonBorder}>
         <Text style={[ styles.buttonTitle, {color}]}>{title}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   )
 }
 
@@ -36,12 +38,12 @@ function Lap({ number, interval, fastest, slowest }) {
   return (
     <View style={styles.lap}>
       <Text style={lapStyle}>Lap {number}</Text>
-      <Timer style={lapStyle} interval={interval}/>
+      <Timer style={[lapStyle, styles.lapTimer]} interval={interval}/>
     </View>
   )
 }
 
-function LapsTable({ laps }) {
+function LapsTable({ laps, timer }) {
   const finishedLaps = laps.slice(1)
   let min = Number.MAX_SAFE_INTEGER
   let max = Number.MIN_SAFE_INTEGER
@@ -57,7 +59,7 @@ function LapsTable({ laps }) {
         <Lap
           number={laps.length - index}
           key={laps.length - index}
-          interval={lap}
+          interval={index == 0 ? timer + lap : lap}
           fastest={lap == min}
           slowest={lap == max}
         />
@@ -73,15 +75,129 @@ function ButtonsRow({ children }) {
 }
 
 export default class App extends Component {
+  constructor(props) {
+    super(props)
+    this.state = {
+      start: 0,
+      now: 0,
+      laps: [ ],
+    }
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer)
+  }
+
+  start = () => {
+    const now = new Date().getTime()
+    this.setState({
+      start: now,
+      now,
+      laps: [0]
+    })
+    this.timer = setInterval(() => {
+      this.setState({now: new Date().getTime()})
+    }, 100)
+  }
+
+  lap = () => {
+    const timeStamp = new Date().getTime()
+    const { laps, now, start } = this.state
+    const [firstLap, ... other] = laps
+    this.setState({
+      laps: [0, firstLap + now - start, ... other],
+      start: timeStamp,
+      now: timeStamp,
+    })
+  }
+
+  stop = () => {
+    clearInterval(this.timer)
+    const { laps, now, start } = this.state
+    const [firstLap, ... other] = laps
+    this.setState({
+      laps: [firstLap + now - start, ... other],
+      start: 0,
+      now: 0,
+    })
+  }
+
+  reset = () => {
+    this.setState({
+      laps: [],
+      start: 0,
+      now: 0,
+    })
+  }
+
+  resume = () => {
+    const now = new Date().getTime()
+    this.setState({
+      start: now,
+      now,
+    })
+    this.timer = setInterval(() => {
+      this.setState({now: new Date().getTime()})
+    }, 100)
+  }
   render() {
+    const { now, start, laps } = this.state
+    const timer = now - start
     return (
       <View style={styles.container}>
-        <Timer interval={DATA.timer} style={styles.timer}/>
-        <ButtonsRow>
-          <RoundButton title='Reset' color='#ffffff' background='#3d3d3d' />
-          <RoundButton title='Start' color='#50d167' background='#1b361f' />
-        </ButtonsRow>
-        <LapsTable laps={DATA.laps} />
+        <Timer
+        interval={laps.reduce((total, curr) => total + curr, 0) + timer}
+        style={styles.timer}
+      />
+        {laps.length == 0 && (
+          <ButtonsRow>
+            <RoundButton
+              title='Lap'
+              color='#8b8b90'
+              background='#151515'
+              disabled
+            />
+            <RoundButton
+              title='Start'
+              color='#50d167'
+              background='#1b361f'
+              onPress = {this.start}
+              />
+          </ButtonsRow>
+        )}
+        {start > 0 && (
+          <ButtonsRow>
+            <RoundButton
+              title='Lap'
+              color='#ffffff'
+              background='#3d3d3d'
+              onPress = {this.lap}
+            />
+            <RoundButton
+              title='Stop'
+              color='#e33935'
+              background='#3c1715'
+              onPress = {this.stop}
+              />
+          </ButtonsRow>
+        )}
+        {laps.length > 0 && start == 0 && (
+          <ButtonsRow>
+            <RoundButton
+              title='Reset'
+              color='#ffffff'
+              background='#3d3d3d'
+              onPress = {this.reset}
+            />
+            <RoundButton
+              title='Start'
+              color='#50d167'
+              background='#1b361f'
+              onPress = {this.start}
+              />
+          </ButtonsRow>
+        )}
+        <LapsTable laps={laps} timer={timer} />
       </View>
     );
   }
@@ -99,6 +215,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 76,
     fontWeight: '200',
+    width: 110,
   },
   button: {
     width: 80,
@@ -114,7 +231,7 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
-    borderWidth: 2,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -128,6 +245,9 @@ const styles = StyleSheet.create({
   lapText: {
     color: '#ffffff',
     fontSize: 18,
+  },
+  lapTimer: {
+    width: 30,
   },
   lap: {
     flexDirection: 'row',
@@ -144,5 +264,8 @@ const styles = StyleSheet.create({
   },
   slowest: {
     color: '#cc3531',
+  },
+  timerContainer: {
+    flexDirection: 'row',
   },
 })
